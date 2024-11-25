@@ -56,6 +56,7 @@ func generateKeyMaterial(randomReader RandomReader, curveWrapper Curve25519Wrapp
 
 	// Encode the public key in base64
 	encodedPublicKey := base64.StdEncoding.EncodeToString(publicKey)
+	encodedPrivateKey := base64.StdEncoding.EncodeToString(privateKey)
 
 	// Compute the nonce (shared secret)
 	nonce, err := curveWrapper.X25519(privateKey, publicKey)
@@ -68,6 +69,8 @@ func generateKeyMaterial(randomReader RandomReader, curveWrapper Curve25519Wrapp
 
 	// Set an expiry date for the public key
 	expiry := time.Now().UTC().Add(24 * time.Hour).Format(time.RFC3339)
+
+	fmt.Printf("-----BEGIN PRIVATE KEY-----\n%s\n-----END PRIVATE KEY-----\n", encodedPrivateKey)
 
 	// Build the KeyMaterial map
 	return map[string]interface{}{
