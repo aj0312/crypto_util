@@ -101,13 +101,7 @@ func TestSuite(t *testing.T) {
 			t.Errorf("expected %s, got %s", string(data), string(reversed))
 		}
 	})
-	t.Run("Encrypt/AESNewCipherError", func(t *testing.T) {
-		invalidSalt := "short" // Too short, so derived key length will be invalid
-		_, err := encrypt("testdata", invalidSalt)
-		if err == nil {
-			t.Error("expected error due to invalid key length but got none")
-		}
-	})
+
 	t.Run("RemovePKCS7Padding/InvalidPaddingBytes", func(t *testing.T) {
 		data := []byte{0x01, 0x02, 0x03, 0x04, 0x05} // Invalid padding
 		blockSize := 8
@@ -117,11 +111,29 @@ func TestSuite(t *testing.T) {
 		}
 	})
 
+	t.Run("Encrypt/AESNewCipherError", func(t *testing.T) {
+		// Simulate an invalid salt that leads to invalid key
+		longSalt := string(make([]byte, 1000000)) // Large salt may produce an invalid key
+		_, err := encrypt("testdata", longSalt)
+		if err == nil || err.Error() != "failed to create AES cipher: cipher: message authentication code mismatch" {
+			t.Errorf("expected AES cipher creation error but got: %v", err)
+		}
+	})
 	t.Run("Decrypt/AESNewCipherError", func(t *testing.T) {
-		invalidSalt := "short" // Too short, so derived key length will be invalid
-		_, err := decrypt("encrypteddata", invalidSalt)
-		if err == nil {
-			t.Error("expected error due to invalid key length but got none")
+		// Simulate an invalid salt that produces an invalid key
+		longSalt := string(make([]byte, 1000000)) // Large salt may produce an invalid key
+		_, err := decrypt("invalidEncryptedData", longSalt)
+		if err == nil || err.Error() != "failed to create AES cipher: cipher: message authentication code mismatch" {
+			t.Errorf("expected AES cipher creation error but got: %v", err)
+		}
+	})
+
+	t.Run("RemovePKCS7Padding/InvalidPaddingBytes", func(t *testing.T) {
+		// Create invalid padding: last byte indicates padding length, but preceding bytes differ
+		data := []byte{0x10, 0x10, 0x10, 0x01} // Incorrect padding sequence
+		_, err := removePKCS7Padding(data, 4)
+		if err == nil || err.Error() != "invalid padding bytes" {
+			t.Errorf("expected invalid padding bytes error but got: %v", err)
 		}
 	})
 
