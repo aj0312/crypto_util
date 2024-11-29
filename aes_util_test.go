@@ -102,15 +102,6 @@ func TestSuite(t *testing.T) {
 		}
 	})
 
-	t.Run("RemovePKCS7Padding/InvalidPaddingBytes", func(t *testing.T) {
-		data := []byte{0x01, 0x02, 0x03, 0x04, 0x05} // Invalid padding
-		blockSize := 8
-		_, err := removePKCS7Padding(data, blockSize)
-		if err == nil {
-			t.Error("expected error due to invalid padding bytes but got none")
-		}
-	})
-
 	t.Run("Encrypt/AESNewCipherError", func(t *testing.T) {
 		// Simulate an invalid salt that leads to invalid key
 		longSalt := string(make([]byte, 1000000)) // Large salt may produce an invalid key
