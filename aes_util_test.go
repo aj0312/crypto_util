@@ -101,4 +101,28 @@ func TestSuite(t *testing.T) {
 			t.Errorf("expected %s, got %s", string(data), string(reversed))
 		}
 	})
+	t.Run("Encrypt/AESNewCipherError", func(t *testing.T) {
+		invalidSalt := "short" // Too short, so derived key length will be invalid
+		_, err := encrypt("testdata", invalidSalt)
+		if err == nil {
+			t.Error("expected error due to invalid key length but got none")
+		}
+	})
+	t.Run("RemovePKCS7Padding/InvalidPaddingBytes", func(t *testing.T) {
+		data := []byte{0x01, 0x02, 0x03, 0x04, 0x05} // Invalid padding
+		blockSize := 8
+		_, err := removePKCS7Padding(data, blockSize)
+		if err == nil {
+			t.Error("expected error due to invalid padding bytes but got none")
+		}
+	})
+
+	t.Run("Decrypt/AESNewCipherError", func(t *testing.T) {
+		invalidSalt := "short" // Too short, so derived key length will be invalid
+		_, err := decrypt("encrypteddata", invalidSalt)
+		if err == nil {
+			t.Error("expected error due to invalid key length but got none")
+		}
+	})
+
 }
