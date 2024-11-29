@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+
+	"github.com/xdg-go/pbkdf2"
 )
 
 // Generate a key from the given salt using SHA256
@@ -15,31 +18,36 @@ func generateKey(salt string) []byte {
 }
 
 // Encrypt function
-func encrypt(input, salt string) (string, error) {
-	key := generateKey(salt)
+func encrypt(strToEncrypt, salt string) (string, error) {
+	secretKey := "ac12ghd75kf75r"
+	iv := make([]byte, 16) // 16 bytes of zeros
+
+	// Key derivation using PBKDF2 with HMAC-SHA256
+	password := []byte(secretKey)
+	saltBytes := []byte(salt)
+	key := pbkdf2.Key(password, saltBytes, 65536, 32, sha256.New)
+
+	// Create AES cipher block
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	plaintext := []byte(input)
+	// Pad the plaintext using PKCS7
+	plaintext := []byte(strToEncrypt)
+	blockSize := block.BlockSize()
+	padding := blockSize - len(plaintext)%blockSize
+	paddedData := append(plaintext, bytes.Repeat([]byte{byte(padding)}, padding)...)
 
-	// Padding to ensure plaintext length is a multiple of the block size
-	padding := aes.BlockSize - len(plaintext)%aes.BlockSize
-	paddedText := append(plaintext, byte(padding))
-	for i := 1; i < padding; i++ {
-		paddedText = append(paddedText, byte(padding))
-	}
-
-	ciphertext := make([]byte, aes.BlockSize+len(paddedText))
-	iv := ciphertext[:aes.BlockSize] // Initialization vector
-
-	// Create a new CBC mode encrypter
+	// Encrypt the data
+	ciphertext := make([]byte, len(paddedData))
 	mode := cipher.NewCBCEncrypter(block, iv)
-	mode.CryptBlocks(ciphertext[aes.BlockSize:], paddedText)
+	mode.CryptBlocks(ciphertext, paddedData)
 
-	// Encode to base64 for easier representation
-	return base64.StdEncoding.EncodeToString(ciphertext), nil
+	// Encode to URL-safe Base64
+	encData := base64.URLEncoding.EncodeToString(ciphertext)
+
+	return encData, nil
 }
 
 // Decrypt function
