@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"github.com/xdg-go/pbkdf2"
@@ -51,69 +52,88 @@ func encrypt(strToEncrypt, salt string) (string, error) {
 }
 
 // Decrypt function
-func decrypt(encrypted, salt string) (string, error) {
-	key := generateKey(salt)
+func decrypt(encryptedStr, salt string) (string, error) {
+	secretKey := "ac12ghd75kf75r"
+	iv := make([]byte, 16) // 16 bytes of zeros
+
+	// Key derivation using PBKDF2 with HMAC-SHA256
+	password := []byte(secretKey)
+	saltBytes := []byte(salt)
+	key := pbkdf2.Key(password, saltBytes, 65536, 32, sha256.New)
+
+	// Decode the base64-encoded ciphertext
+	ciphertext, err := base64.URLEncoding.DecodeString(encryptedStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode base64: %w", err)
+	}
+
+	// Create AES cipher block
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
-	if err != nil {
-		return "", err
-	}
-
-	if len(ciphertext) < aes.BlockSize {
-		return "", fmt.Errorf("ciphertext too short")
-	}
-
-	iv := ciphertext[:aes.BlockSize]
-	ciphertext = ciphertext[aes.BlockSize:]
-
-	if len(ciphertext)%aes.BlockSize != 0 {
-		return "", fmt.Errorf("ciphertext is not a multiple of the block size")
-	}
-
-	// Create a new CBC mode decrypter
+	// Decrypt the data
+	plaintext := make([]byte, len(ciphertext))
 	mode := cipher.NewCBCDecrypter(block, iv)
-	mode.CryptBlocks(ciphertext, ciphertext)
+	mode.CryptBlocks(plaintext, ciphertext)
 
-	// Remove padding
-	padding := int(ciphertext[len(ciphertext)-1])
-	if padding < 1 || padding > aes.BlockSize {
-		return "", fmt.Errorf("invalid padding")
+	// Remove PKCS7 padding
+	plaintext, err = removePKCS7Padding(plaintext, block.BlockSize())
+	if err != nil {
+		return "", fmt.Errorf("failed to remove padding: %w", err)
 	}
-	plaintext := ciphertext[:len(ciphertext)-padding]
 
 	return string(plaintext), nil
+}
+
+// Remove PKCS7 padding
+func removePKCS7Padding(data []byte, blockSize int) ([]byte, error) {
+	length := len(data)
+	if length == 0 || length%blockSize != 0 {
+		return nil, errors.New("invalid padded data")
+	}
+
+	// Get the last byte value as padding length
+	padding := int(data[length-1])
+	if padding > blockSize || padding == 0 {
+		return nil, errors.New("invalid padding size")
+	}
+
+	// Check if padding bytes are all the same
+	for i := length - padding; i < length; i++ {
+		if data[i] != byte(padding) {
+			return nil, errors.New("invalid padding bytes")
+		}
+	}
+
+	return data[:length-padding], nil
 }
 
 // xor function: Applies XOR operation between input bytes and key bytes
 func xor(data []byte, key string) []byte {
 	keyBytes := []byte(key)
-	out := make([]byte, len(data))
-
-	for i := range data {
-		out[i] = data[i] ^ keyBytes[i%len(keyBytes)]
+	output := make([]byte, len(data))
+	for i := 0; i < len(data); i++ {
+		output[i] = data[i] ^ keyBytes[i%len(keyBytes)]
 	}
+	return output
 
-	return out
 }
 
 // EncryptValueToXor: Encodes the input string using XOR and Base64
-func encryptValueToXor(input, key string) (string, error) {
-	xoredBytes := xor([]byte(input), key)
+func encryptValueToXor(value string, key string) string {
+	xoredBytes := xor([]byte(value), key)
 	encoded := base64.StdEncoding.EncodeToString(xoredBytes)
-	return encoded, nil
+	return encoded
 }
 
 // DecryptXoredValue: Decodes the Base64 string and applies XOR to retrieve the original value
-func decryptXoredValue(encoded, key string) (string, error) {
-	xoredBytes, err := base64.StdEncoding.DecodeString(encoded)
+func decryptXoredValue(xoredValue, key string) (string, error) {
+	xoredBytes, err := base64.StdEncoding.DecodeString(xoredValue)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to decode base64: %w", err)
 	}
-
-	decodedBytes := xor(xoredBytes, key)
-	return string(decodedBytes), nil
+	originalBytes := xor(xoredBytes, key)
+	return string(originalBytes), nil
 }
