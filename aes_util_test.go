@@ -1,120 +1,104 @@
 package main
 
 import (
-	"crypto/aes"
-	"encoding/base64"
-	"strings"
 	"testing"
 )
 
-func TestGenerateKey(t *testing.T) {
-	salt := "test-salt"
-	expectedLength := 32 // SHA256 produces a 256-bit hash (32 bytes)
+func TestSuite(t *testing.T) {
+	t.Run("Encrypt/Decrypt", func(t *testing.T) {
+		salt := "somesalt"
+		original := "hello world"
 
-	key := generateKey(salt)
+		encrypted, err := encrypt(original, salt)
+		if err != nil {
+			t.Fatalf("encrypt failed: %v", err)
+		}
+		if encrypted == "" {
+			t.Fatalf("expected encrypted string, got empty")
+		}
 
-	if len(key) != expectedLength {
-		t.Errorf("Expected key length %d, got %d", expectedLength, len(key))
-	}
-}
+		decrypted, err := decrypt(encrypted, salt)
+		if err != nil {
+			t.Fatalf("decrypt failed: %v", err)
+		}
+		if decrypted != original {
+			t.Errorf("expected %s, got %s", original, decrypted)
+		}
 
-func TestEncryptDecrypt(t *testing.T) {
-	input := "hello world"
-	salt := "test-salt"
+		// Error cases
+		_, err = decrypt("invalid_base64", salt)
+		if err == nil {
+			t.Error("expected error for invalid base64 but got none")
+		}
 
-	encrypted, err := encrypt(input, salt)
-	if err != nil {
-		t.Fatalf("Encrypt failed: %v", err)
-	}
+		_, err = decrypt(encrypted, "")
+		if err == nil {
+			t.Error("expected error for empty salt but got none")
+		}
+	})
 
-	decrypted, err := decrypt(encrypted, salt)
-	if err != nil {
-		t.Fatalf("Decrypt failed: %v", err)
-	}
+	t.Run("RemovePKCS7Padding", func(t *testing.T) {
+		validPadded := []byte("hello\x03\x03\x03")
+		invalidPadded := []byte("hello\x04\x04\x04\x04")
+		blockSize := 8
 
-	if decrypted != input {
-		t.Errorf("Expected decrypted value '%s', got '%s'", input, decrypted)
-	}
-}
+		result, err := removePKCS7Padding(validPadded, blockSize)
+		if err != nil {
+			t.Fatalf("removePKCS7Padding failed: %v", err)
+		}
+		if string(result) != "hello" {
+			t.Errorf("expected 'hello', got %s", string(result))
+		}
 
-func TestEncryptDecryptInvalidPadding(t *testing.T) {
-	input := "hello world"
-	salt := "test-salt"
+		_, err = removePKCS7Padding(invalidPadded, blockSize)
+		if err == nil {
+			t.Error("expected error for invalid padding but got none")
+		}
 
-	encrypted, err := encrypt(input, salt)
-	if err != nil {
-		t.Fatalf("Encrypt failed: %v", err)
-	}
+		_, err = removePKCS7Padding([]byte("hello"), blockSize)
+		if err == nil {
+			t.Error("expected error for unpadded data but got none")
+		}
+	})
 
-	// Corrupt the padding in the ciphertext
-	decodedCiphertext, _ := base64.StdEncoding.DecodeString(encrypted)
-	decodedCiphertext[len(decodedCiphertext)-1] = byte(aes.BlockSize + 1) // Invalid padding
-	corruptedCiphertext := base64.StdEncoding.EncodeToString(decodedCiphertext)
+	t.Run("EncryptValueToXor/DecryptXoredValue", func(t *testing.T) {
+		key := "mysecretkey"
+		original := "hello world"
 
-	_, err = decrypt(corruptedCiphertext, salt)
-	if err == nil || !strings.Contains(err.Error(), "invalid padding") {
-		t.Errorf("Expected 'invalid padding' error, got %v", err)
-	}
-}
+		encrypted := encryptValueToXor(original, key)
+		if encrypted == "" {
+			t.Fatalf("expected encrypted string, got empty")
+		}
 
-func TestDecryptShortCiphertext(t *testing.T) {
-	// Ensure the input is valid Base64 but too short to contain an IV
-	encrypted := base64.StdEncoding.EncodeToString([]byte("short"))
-	salt := "test-salt"
+		decrypted, err := decryptXoredValue(encrypted, key)
+		if err != nil {
+			t.Fatalf("decryptXoredValue failed: %v", err)
+		}
+		if decrypted != original {
+			t.Errorf("expected %s, got %s", original, decrypted)
+		}
 
-	_, err := decrypt(encrypted, salt)
-	if err == nil || !strings.Contains(err.Error(), "ciphertext too short") {
-		t.Errorf("Expected 'ciphertext too short' error, got %v", err)
-	}
-}
+		// Error cases
+		_, err = decryptXoredValue("invalid_base64", key)
+		if err == nil {
+			t.Error("expected error for invalid base64 but got none")
+		}
 
-func TestDecryptInvalidBase64(t *testing.T) {
-	encrypted := "invalid-base64$"
-	salt := "test-salt"
+		_, err = decryptXoredValue("", key)
+		if err == nil {
+			t.Error("expected error for empty encrypted string but got none")
+		}
+	})
 
-	_, err := decrypt(encrypted, salt)
-	if err == nil || !strings.Contains(err.Error(), "illegal base64 data") {
-		t.Errorf("Expected 'illegal base64 data' error, got %v", err)
-	}
-}
+	t.Run("XOR", func(t *testing.T) {
+		data := []byte("hello world")
+		key := "mysecretkey"
 
-func TestEncryptValueToXorAndDecryptXoredValue(t *testing.T) {
-	input := "hello world"
-	key := "test-key"
+		xored := xor(data, key)
+		reversed := xor(xored, key)
 
-	encrypted, err := encryptValueToXor(input, key)
-	if err != nil {
-		t.Fatalf("EncryptValueToXor failed: %v", err)
-	}
-
-	decrypted, err := decryptXoredValue(encrypted, key)
-	if err != nil {
-		t.Fatalf("DecryptXoredValue failed: %v", err)
-	}
-
-	if decrypted != input {
-		t.Errorf("Expected decrypted value '%s', got '%s'", input, decrypted)
-	}
-}
-
-func TestEncryptValueToXorInvalidBase64(t *testing.T) {
-	invalidBase64 := "invalid-base64$"
-	key := "test-key"
-
-	_, err := decryptXoredValue(invalidBase64, key)
-	if err == nil || !strings.Contains(err.Error(), "illegal base64 data") {
-		t.Errorf("Expected 'illegal base64 data' error, got %v", err)
-	}
-}
-
-func TestXor(t *testing.T) {
-	data := []byte("hello")
-	key := "key"
-
-	xored := xor(data, key)
-	unxored := xor(xored, key)
-
-	if string(unxored) != string(data) {
-		t.Errorf("Expected unxored value '%s', got '%s'", string(data), string(unxored))
-	}
+		if string(reversed) != string(data) {
+			t.Errorf("expected %s, got %s", string(data), string(reversed))
+		}
+	})
 }

@@ -12,12 +12,6 @@ import (
 	"github.com/xdg-go/pbkdf2"
 )
 
-// Generate a key from the given salt using SHA256
-func generateKey(salt string) []byte {
-	hash := sha256.Sum256([]byte(salt))
-	return hash[:]
-}
-
 // Encrypt function
 func encrypt(strToEncrypt, salt string) (string, error) {
 	secretKey := "ac12ghd75kf75r"
@@ -130,6 +124,11 @@ func encryptValueToXor(value string, key string) string {
 
 // DecryptXoredValue: Decodes the Base64 string and applies XOR to retrieve the original value
 func decryptXoredValue(xoredValue, key string) (string, error) {
+	// Handle empty input
+	if xoredValue == "" {
+		return "", errors.New("xoredValue cannot be empty")
+	}
+
 	xoredBytes, err := base64.StdEncoding.DecodeString(xoredValue)
 	if err != nil {
 		return "", fmt.Errorf("failed to decode base64: %w", err)
